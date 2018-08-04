@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<FormTemplate>
+  <Name />
+  <Comments />
+  <InternalNotes />
+  <Guid>3ba69e02-87a8-4548-8e8a-9ef9df992788</Guid>
+  <BluePrintName />
+  <Namespace>ReadyEDI.EntityFactory.DataAccess.BluePrint</Namespace>
+  <BluePrints />
+  <APIs />
+  <SdkApis />
+  <Folders />
+  <SdkGroups />
+  <IsSdkProject>false</IsSdkProject>
+  <SdkClassName />
+  <IsWcfProject>false</IsWcfProject>
+</FormTemplate>

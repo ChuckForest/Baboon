@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<FormTemplate>
+  <Name />
+  <Comments />
+  <InternalNotes />
+  <Guid>2bdf0b09-a72f-404e-8bf2-7a8e34789a58</Guid>
+  <BluePrintName />
+  <Namespace />
+  <Entities />
+  <Statics />
+  <WebServices />
+  <DevelopmentKits />
+  <APIs />
+  <SdkApis />
+  <Folders />
+  <SdkGroups />
+  <IsSdkProject>false</IsSdkProject>
+  <SdkClassName />
+  <IsWcfProject>false</IsWcfProject>
+</FormTemplate>
