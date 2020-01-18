@@ -184,6 +184,7 @@ namespace ReadyEDI.EntityFactory
         {
             IEntity entity = (IEntity)Activator.CreateInstance(typeof(T), new object[] { });
             entity.ConnectionString = _connectionString;
+
             entity.__Elements.Where(el => /*el.MultipleResultSetIndex == null && */!el.IsCollection/* && !el.IsEntity*/).ToList<ElementBaseData>().ForEach(e => ProcessRow(entity, e, row));
             if (!_lazyLoad)
                 entity.RefreshCollections();
@@ -311,7 +312,14 @@ namespace ReadyEDI.EntityFactory
         {
             IEntity propertyEntity;
             if (element.Data == null)
-                propertyEntity = (IEntity)Activator.CreateInstance(entity.GetType().AssemblyQualifiedName.Split(',')[1].Trim(), String.Format("{0}.{1}", entity.GetType().Namespace, element.TypeName)).Unwrap();
+                try
+                {
+                    propertyEntity = (IEntity)Activator.CreateInstance(entity.GetType().AssemblyQualifiedName.Split(',')[1].Trim(), String.Format("{0}.{1}", element.EntityType, element.TypeName)).Unwrap();
+                }
+                catch(System.Exception ex)
+                {
+                    return;
+                }
             else
                 propertyEntity = (IEntity)element.Data;
 
@@ -320,8 +328,11 @@ namespace ReadyEDI.EntityFactory
             propertyEntity.__Elements.Where(ebd => !ebd.IsEntity).ToList().ForEach(ebd =>
             {
                 string rowName = String.Format("{0}_{1}", String.Join("_", parentPropertyEntityNames), ebd.Name);
+
                 if (row.Table.Columns.Contains(rowName))
+                {
                     ebd.Data = row[rowName];
+                }
             });
 
             propertyEntity.__Elements.Where(ebd => ebd.IsEntity).ToList().ForEach(ebd =>
@@ -369,7 +380,7 @@ namespace ReadyEDI.EntityFactory
             {
                 if (row.Table.Columns.Contains(element.Name))
                 {
-                    element.Data = row[element.Name];
+                    element.Data = row[element.Name] is System.DBNull ? null : row[element.Name];
                     //var index = reader.GetOrdinal(element.Name);
                     ////getLogger().Trace(string.Format("Collection->AddRange->ProcessReader {0} {1}", element.Name, reader.GetValue(reader.GetOrdinal(element.Name))));
                     //element.Data = reader.GetFieldType(index).Name == "Boolean" ? reader.GetBoolean(index) : reader.GetValue(index);

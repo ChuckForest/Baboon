@@ -51,6 +51,7 @@ namespace ReadyEDI.EntityFactory
         void UpdateFieldValue(DataProxy proxy);
         void Save<T>() where T : IEntity;
         //void SaveChanges();
+        void Save();
         void RefreshCollections();
         string JsonStringify();
         void LoadFromJson(string jsonData);

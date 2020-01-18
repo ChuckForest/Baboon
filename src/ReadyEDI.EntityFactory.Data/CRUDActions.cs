@@ -78,11 +78,27 @@ namespace ReadyEDI.EntityFactory.Data
             if (direction.Equals(ParameterDirection.Input))
                 elements.ForEach(e =>
                 {
-                    var parameter = new SqlParameter(e.Name, e.Data == null
-                        ? DBNull.Value : e.Data);
-                    if (e.SqlDataType.Equals(System.Data.SqlDbType.DateTime2))
-                        parameter.SqlDbType = SqlDbType.DateTime2;
-                    parameters.Add(parameter);
+                    if (e.IsEntity)
+                    {
+                        if (e.Data != null)
+                            (e.Data as IEntity).__Elements.Where(elem => elem.SqlDbIsPrimaryKey).ToList().ForEach(elem =>
+                            {
+                                //if (elem.Name == "Id")
+                                    parameters.Add(new SqlParameter(string.Concat(e.Name, "_", elem.Name), elem.Data));
+                                //else
+                                //    parameters.Add(new SqlParameter(elem.Name, elem.Data));
+                            });
+                    }
+                    else
+                    {
+                        var parameter = new SqlParameter(e.Name, e.Data == null
+                            ? DBNull.Value : e.Data);
+                        if (e.SqlDataType.Equals(System.Data.SqlDbType.DateTime2))
+                            parameter.SqlDbType = SqlDbType.DateTime2;
+                        else if (e.SqlDataType.Equals(System.Data.SqlDbType.VarBinary))
+                            parameter.SqlDbType = SqlDbType.VarBinary;
+                        parameters.Add(parameter);
+                    }
                 });
             else
             {
@@ -262,16 +278,19 @@ namespace ReadyEDI.EntityFactory.Data
             }
             else
             {
-                if (element.Data == null)
+                if (reader.HasRows)
                 {
-                    Type T2 = typeof(T).GetProperties().ToList().Find(p => p.Name.Equals(element.Name)).PropertyType;
-                    element.Data = (IEntity)Activator.CreateInstance(T2);
-                }
+                    if (element.Data == null)
+                    {
+                        Type T2 = typeof(T).GetProperties().ToList().Find(p => p.Name.Equals(element.Name)).PropertyType;
+                        element.Data = (IEntity)Activator.CreateInstance(T2);
+                    }
 
-                if (reader.Read())
-                    (element.Data as IEntity).__Elements.Where(el => (el.MultipleResultSetIndex == null && el.IsCollection == false)).ToList<ElementBaseData>().ForEach(e => SetData(reader, e));
-                else
-                    (element.Data as IEntity).Notifications.Add(new Notification() { Severity = Notification.NoticeType.Warning, Message = "Record not found. for " });
+                    if (reader.Read())
+                        (element.Data as IEntity).__Elements.Where(el => (el.MultipleResultSetIndex == null && el.IsCollection == false)).ToList<ElementBaseData>().ForEach(e => SetData(reader, e));
+                    else
+                        (element.Data as IEntity).Notifications.Add(new Notification() { Severity = Notification.NoticeType.Warning, Message = "Record not found. for " });
+                }
 
                 reader.NextResult();
             }
@@ -291,17 +310,17 @@ namespace ReadyEDI.EntityFactory.Data
             {
                 if (e.IsCollection && e.TypeName.ToLower().Equals("string"))
                 {
-                    if (e.Data == null)
+                    if (e.Data == null || e.Data.Equals(string.Empty))
                         e.Data = string.Empty;
                     else
                     {
                         var list = (e.Data as List<string>);
-                        list.ForEach(v => v.Replace(";", splitEncoding));
-                        list.RemoveAll(v => v.Equals(string.Empty));
-                        //if (list.Any())
-                            e.Data = string.Join(";", list);//new List<string> { string.Join(";", list) };
-                        //else
-                            //e.Data = string.Empty;
+                        if (list != null)
+                        {
+                            list.ForEach(v => v.Replace(";", splitEncoding));
+                            list.RemoveAll(v => v.Equals(string.Empty));
+                            e.Data = string.Join(";", list);
+                        }
                     }
                 }
             });
@@ -337,6 +356,29 @@ namespace ReadyEDI.EntityFactory.Data
             //}
         }
 
+        public static void Drop(IEntity entity)
+        {
+            try
+            {
+                using (SqlConnection conn = new SqlConnection(GetConnectionString(entity)))
+                {
+                    conn.Open();
+
+                    using (SqlCommand cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandText = string.Format("DROP TABLE [{0}].[(1)]", entity.SchemaName, entity.EntityName);
+                        cmd.ExecuteNonQuery();
+                    }
+
+                    if (conn.State == ConnectionState.Open) conn.Close();
+                }
+            }
+            catch (System.Exception ex)
+            {
+                ProcessException(EntityExemptionType.GeneralFailure, entity, ex);
+            }        
+        }
+
         public static void Create<T>(IEntity entity) where T : IEntity
         {
             try
@@ -361,7 +403,7 @@ namespace ReadyEDI.EntityFactory.Data
                         cmd.CommandText = String.Format("[{0}].{1}_Create", String.IsNullOrWhiteSpace(entity.SchemaName) ? "dbo" : entity.SchemaName, entity.__EntityName);
                         SqlParameter[] parametersOut = BuildSqlParameters(entity.__Elements.Where(e => /*e.UseForMatching || */e.SqlDbIsPrimaryKey).ToList(), ParameterDirection.InputOutput);
                         cmd.Parameters.AddRange(parametersOut);
-                        cmd.Parameters.AddRange(BuildSqlParameters(entity.__Elements.Where(e => (!e.IsCollection || e.TypeName.ToLower().Equals("string")) && !e.IsEntity/* && !e.UseForMatching*/ && !e.SqlDbIsPrimaryKey && !e.DoNotPersist).ToList(), ParameterDirection.Input));
+                        cmd.Parameters.AddRange(BuildSqlParameters(entity.__Elements.Where(e => (!e.IsCollection || e.TypeName.ToLower().Equals("string")) /*&& !e.IsEntity && !e.UseForMatching*/ && !e.SqlDbIsPrimaryKey && !e.DoNotPersist).ToList(), ParameterDirection.Input));
 
                         try
                         {
@@ -480,7 +522,8 @@ namespace ReadyEDI.EntityFactory.Data
                             {
                                 if (reader.Read())
                                 {
-                                    entity.__Elements.Where(el => (el.MultipleResultSetIndex == null && el.IsCollection == false && el.IsEntity == false)).ToList<ElementBaseData>().ForEach(e => SetData(reader, e));
+                                    var fields = entity.__Elements.Where(el => (el.MultipleResultSetIndex == null && el.IsCollection == false && el.IsEntity == false)).ToList<ElementBaseData>();
+                                    fields.ForEach(e => SetData(reader, e));
 
                                     //if (entity.LazyLoad == 0)
                                     //{
@@ -488,7 +531,8 @@ namespace ReadyEDI.EntityFactory.Data
                                         if (elements.Count > 0)
                                         {
                                             elements = elements.OrderBy(e => e.MultipleResultSetIndex).ToList();
-                                            reader.NextResult();
+                                            //if (fields.Where(f => !f.SqlDbIsPrimaryKey).Any())
+                                                reader.NextResult();
                                             elements.ForEach(e =>
                                             {
                                                 PopulateChildElement<T>(reader, e);
@@ -653,7 +697,7 @@ namespace ReadyEDI.EntityFactory.Data
                         cmd.CommandText = String.Concat(
                             String.Format("[{0}].", String.IsNullOrWhiteSpace(entity.SchemaName) ? "dbo" : entity.SchemaName)
                             , entity.__EntityName, "_Update");
-                        SqlParameter[] para = BuildSqlParameters(entity.__Elements.Where(e => !e.IsCollection && !e.IsEntity && !e.DoNotPersist).ToList(), ParameterDirection.Input);
+                        SqlParameter[] para = BuildSqlParameters(entity.__Elements.Where(e => !e.IsCollection/* && !e.IsEntity*/ && !e.DoNotPersist).ToList(), ParameterDirection.Input);
                         para = para.Distinct().ToArray();
                         cmd.Parameters.AddRange(para);
 
@@ -853,6 +897,130 @@ namespace ReadyEDI.EntityFactory.Data
                 ProcessException(EntityExemptionType.GeneralFailure, entity, ex);
             }
         }
+
+        public static void Slice(IEntity entity, int field, IEnumerable<IEntity> remove)
+        {
+            if (!remove.Any())
+                return;
+
+            try
+            {
+                var fieldName = entity.__Elements.FindLast(elem => (long?)Math.Pow(2, field) == elem.Bitwise).Name;
+
+                using (SqlConnection conn = new SqlConnection(GetConnectionString(entity)))
+                {
+                    conn.Open();
+
+                    using (SqlCommand cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandType = CommandType.StoredProcedure;
+                        cmd.CommandText = string.Concat(
+                            string.Format("[{0}].", string.IsNullOrWhiteSpace(entity.SchemaName) ? "dbo" : entity.SchemaName)
+                            , entity.__EntityName, "_", fieldName, "_Delete");
+
+                        var staticParameter = new List<SqlParameter>();
+                        entity.__Elements.Where(elem => elem.SqlDbIsPrimaryKey).ToList().ForEach(elem =>
+                        {
+                            staticParameter.Add(new SqlParameter(string.Concat(entity.EntityName, "_", elem.Name), elem.Data));
+                        });
+
+                        remove.ToList().ForEach(r =>
+                        {
+                            cmd.Parameters.Clear();
+                            cmd.Parameters.AddRange(staticParameter.ToArray());
+
+                            r.__Elements.Where(elem => elem.SqlDbIsPrimaryKey).ToList().ForEach(elem =>
+                            {
+                                cmd.Parameters.Add(new SqlParameter(string.Concat(fieldName, "_", elem.Name), elem.Data));
+                            });
+
+                            try
+                            {
+                                cmd.ExecuteNonQuery();
+                            }
+                            catch (SqlException ex)
+                            {
+                                if (ex.State > 99)
+                                {
+                                    ProcessNotification(entity, ex, Notification.NoticeType.Exception);
+                                }
+                                else
+                                {
+                                    ProcessException(EntityExemptionType.SqlServerFailure, entity, ex);
+                                }
+                            }
+
+                            cmd.Dispose();
+                        });
+                    }
+
+                    if (conn.State == ConnectionState.Open) conn.Close();
+                }
+            }
+            catch (System.Exception ex)
+            {
+                ProcessException(EntityExemptionType.GeneralFailure, entity, ex);
+            }
+        }
+
+        /*public static Guid GetMapGuid<T>(IEntity entity, int field, int id) where T : IEntity
+        {
+            try
+            {
+                var fieldName = entity.__Elements.FindLast(elem => (long?)Math.Pow(2, field) == elem.Bitwise).Name;
+                var fieldType = entity.__Elements.FindLast(elem => (long?)Math.Pow(2, field) == elem.Bitwise).TypeName;
+
+                using (SqlConnection conn = new SqlConnection(GetConnectionString(entity)))
+                {
+                    conn.Open();
+
+                    using (SqlCommand cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandType = CommandType.StoredProcedure;
+                        cmd.CommandText = string.Concat(
+                            string.Format("[{0}].", string.IsNullOrWhiteSpace(entity.SchemaName) ? "dbo" : entity.SchemaName)
+                            , entity.__EntityName, "_", fieldName, "_Match");
+
+
+                        //cmd.Parameters.Add(new SqlParameter(string.Concat(entity.EntityName, "_Id"), entity.__Elements))
+
+                        var staticParameter = new List<SqlParameter>();
+                        entity.__Elements.Where(elem => elem.SqlDbIsPrimaryKey).ToList().ForEach(elem =>
+                        {
+                            staticParameter.Add(new SqlParameter(string.Concat(entity.EntityName, "_", elem.Name), elem.Data));
+                        });
+                        staticParameter.Add(new SqlParameter(string.Concat(fieldName, "_Id"), elem.Data));
+
+                        try
+                        {
+                            cmd.ExecuteNonQuery();
+                        }
+                        catch (SqlException ex)
+                        {
+                            if (ex.State > 99)
+                            {
+                                ProcessNotification(entity, ex, Notification.NoticeType.Exception);
+                            }
+                            else
+                            {
+                                ProcessException(EntityExemptionType.SqlServerFailure, entity, ex);
+                            }
+                        }
+
+                        cmd.Dispose();
+
+                    }
+
+                    if (conn.State == ConnectionState.Open) conn.Close();
+                }
+            }
+            catch (System.Exception ex)
+            {
+                ProcessException(EntityExemptionType.GeneralFailure, entity, ex);
+            }
+
+            return Guid.NewGuid();
+        }*/
 
         /*public static void Delete<T>(Collection<T> entities) where T : IEntity
         {
@@ -1081,6 +1249,9 @@ namespace ReadyEDI.EntityFactory.Data
 
         private static void UpdateAttachedCollection<T>(SqlConnection conn, SqlTransaction tran, IEntity entity, ElementBaseData attachedCollection) where T : IEntity
         {
+            if (attachedCollection.Data == null)
+                return;
+
             Type T2;
             if (attachedCollection.IsCollection)
             {
@@ -1089,13 +1260,36 @@ namespace ReadyEDI.EntityFactory.Data
             else
                 T2 = typeof(T).GetProperties().ToList().Find(p => p.Name.Equals(attachedCollection.Name)).PropertyType;
 
+            //get the exended entity that contains the property
+            /*var types = new List<Type>();
+            var type = typeof(T);
+            while (type.BaseType != null)
+            {
+                var e = type.BaseType as IEntity;
+                if (e.__Elements.Where(el => el.Name.Equals(attachedCollection.Name)).Any())
+                    entity = e;
+
+                type = type.BaseType;
+            }*/
+            //entity = type as IEntity;
+
+            
+            var type = typeof(T);
+            var entityName = type.Name;
+            while (type != null && !type.GetTypeInfo().DeclaredProperties.Where(el => el.Name.Equals(attachedCollection.Name)).Any())
+            {
+                type = type.BaseType;
+                if (type != null)
+                    entityName = type.Name;
+            }
+
             MethodInfo method = typeof(CRUDActions).GetMethod("UpdateAttachedCollectionType", BindingFlags.NonPublic | BindingFlags.Static);
             MethodInfo generic = method.MakeGenericMethod(T2);
-            object[] arguments = { conn, tran, entity, attachedCollection };
+            object[] arguments = { conn, tran, entity, attachedCollection, entityName };
             generic.Invoke(null, arguments);
         }
 
-        private static void UpdateAttachedCollectionType<T2>(SqlConnection conn, SqlTransaction tran, IEntity entity, ElementBaseData attachedCollection) where T2 : IEntity
+        private static void UpdateAttachedCollectionType<T2>(SqlConnection conn, SqlTransaction tran, IEntity entity, ElementBaseData attachedCollection, string entityName) where T2 : IEntity
         {
             //EncodeSplit(entity);
             
@@ -1104,13 +1298,13 @@ namespace ReadyEDI.EntityFactory.Data
             //    conn.Open();
 
             if (attachedCollection.IsCollection && !attachedCollection.TypeName.ToLower().Equals("string"))
-                (attachedCollection.Data as List<T2>).ForEach(e => UpdateAttachedCollectionItem<T2>(conn, tran, entity, /*para, */e, attachedCollection.Name/*, isNew*/));
+                (attachedCollection.Data as List<T2>).ForEach(e => UpdateAttachedCollectionItem<T2>(conn, tran, entity, /*para, */e, attachedCollection.Name/*, isNew*/, entityName));
             else
-                UpdateAttachedCollectionItem<T2>(conn, tran, entity, /*para, */attachedCollection.Data as IEntity, attachedCollection.Name/*, isNew*/);
+                UpdateAttachedCollectionItem<T2>(conn, tran, entity, /*para, */attachedCollection.Data as IEntity, attachedCollection.Name/*, isNew*/, entityName);
 
         }
 
-        private static void UpdateAttachedCollectionItem<T2>(SqlConnection conn, SqlTransaction tran, IEntity entity, /*SqlParameter[] para, */IEntity attachedEntity, string attachedCollectionName/*, bool isNew*/) where T2 : IEntity
+        private static void UpdateAttachedCollectionItem<T2>(SqlConnection conn, SqlTransaction tran, IEntity entity, /*SqlParameter[] para, */IEntity attachedEntity, string attachedCollectionName/*, bool isNew*/, string entityName) where T2 : IEntity
         {
             try
             {
@@ -1135,7 +1329,7 @@ namespace ReadyEDI.EntityFactory.Data
                         {
                             cmd.Transaction = tran;
                             cmd.CommandType = CommandType.StoredProcedure;
-                            cmd.CommandText = String.Format("[{0}].{1}{3}{2}_Delete", String.IsNullOrWhiteSpace(entity.SchemaName) ? "dbo" : entity.SchemaName, entity.EntityName, attachedCollectionName, dataObjectNameDelimitor);
+                            cmd.CommandText = String.Format("[{0}].{1}{3}{2}_Delete", String.IsNullOrWhiteSpace(entity.SchemaName) ? "dbo" : entity.SchemaName, entity.__EntityName, attachedCollectionName, dataObjectNameDelimitor);
 
                             cmd.Parameters.AddRange(BuildSqlParametersForAttachment(entity.__EntityName, entity.__Elements.Where(e => /*e.UseForMatching || */e.SqlDbIsPrimaryKey || e.IsFlag).ToList()));
                             cmd.Parameters.AddRange(BuildSqlParametersForAttachment(attachedCollectionName, attachedEntity.__Elements.Where(e => /*e.UseForMatching || */e.SqlDbIsPrimaryKey || e.IsFlag).ToList()));
@@ -1167,7 +1361,30 @@ namespace ReadyEDI.EntityFactory.Data
                 {
                     //EncodeSplit(attachedEntity);
                     //EncodeSplit(entity);
-
+/*
+                    var entityName = entity.__EntityName;
+                    var elements = entity.__Elements;
+                    var type = typeof(T2);
+                    while (type != null && !elements.Where(el => el.Name.Equals(attachedCollectionName)).Any())
+                    {       
+                        type = type.DeclaringType;
+                        if (type != null)
+                        {
+                            var iEntity = type as IEntity;
+                            entityName = iEntity.__EntityName;
+                            elements = iEntity.__Elements;
+                        }
+                    }*/
+                    /*
+                    var entityName = entity.__EntityName;
+                    var type = typeof(T2);
+                    while (type != null && !type.GetProperties().Where(p => p.Name.Equals(attachedCollectionName)).Any())
+                    {
+                        type = type.DeclaringType;
+                        if (type != null)
+                            entityName = (type as IEntity).__EntityName;
+                    }
+                    */
                     SqlParameter[] para;
                     if (isNew)
                         para = BuildSqlParameters(attachedEntity.__Elements.Where(e => /*e.UseForMatching || */e.SqlDbIsPrimaryKey).ToList(), ParameterDirection.InputOutput);
@@ -1176,13 +1393,16 @@ namespace ReadyEDI.EntityFactory.Data
 
                     using (SqlCommand cmd = conn.CreateCommand())
                     {
+                        //if (entityName == "Contact")
+                        //    System.Diagnostics.Debugger.Break();
+
                         cmd.Transaction = tran;
                         cmd.CommandType = CommandType.StoredProcedure;
-                        cmd.CommandText = String.Format("[{0}].{1}{4}{2}{4}{3}", String.IsNullOrWhiteSpace(entity.SchemaName) ? "dbo" : entity.SchemaName, entity.__EntityName, attachedCollectionName, isNew ? "Create" : "Update", dataObjectNameDelimitor);
+                        cmd.CommandText = String.Format("[{0}].{1}{4}{2}{4}{3}", String.IsNullOrWhiteSpace(entity.SchemaName) ? "dbo" : entity.SchemaName, entityName, attachedCollectionName, isNew ? "Create" : "Update", dataObjectNameDelimitor);
 
                         SqlParameter[] parametersOut = para;
                         cmd.Parameters.AddRange(parametersOut);                       
-                        SqlParameter[] para2 = BuildSqlParametersForAttachment(entity.__EntityName, entity.__Elements.Where(e => /*e.UseForMatching || */e.SqlDbIsPrimaryKey || e.IsFlag).ToList());
+                        SqlParameter[] para2 = BuildSqlParametersForAttachment(entityName, entity.__Elements.Where(e => /*e.UseForMatching || */e.SqlDbIsPrimaryKey || e.IsFlag).ToList());
                         cmd.Parameters.AddRange(para2);
                         cmd.Parameters.AddRange(BuildSqlParameters(attachedEntity.__Elements.Where(e => (!e.IsCollection || e.TypeName.ToLower().Equals("string")) && !e.IsEntity && /*!e.UseForMatching && */!e.SqlDbIsPrimaryKey && !e.DoNotPersist).ToList(), ParameterDirection.Input));
                         //cmd.Parameters.AddRange(BuildFKSqlParameters(attachedEntity.__Elements.Where(e => !e.IsCollection && e.IsEntity).ToList()));
@@ -1193,7 +1413,8 @@ namespace ReadyEDI.EntityFactory.Data
                             cmd.ExecuteNonQuery();
                             HydrateEntity(attachedEntity, parametersOut);
 
-                            attachedEntity.AttachedCollections.ForEach(ac => UpdateAttachedCollection<T2>(conn, tran, attachedEntity, ac));
+                            if (attachedEntity.LazyLoad >= 0)
+                                attachedEntity.AttachedCollections.ForEach(ac => UpdateAttachedCollection<T2>(conn, tran, attachedEntity, ac));
                         }
                         catch (SqlException ex)
                         {

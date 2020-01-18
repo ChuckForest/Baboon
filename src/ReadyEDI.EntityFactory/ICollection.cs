@@ -11,5 +11,6 @@ namespace ReadyEDI.EntityFactory
 
         string ConnectionString { get; set; }
         List<EntityException> Exceptions { get; set; }
+        string SchemaName { get; set; }
     }
 }

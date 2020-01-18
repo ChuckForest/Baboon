@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<package >
+    <metadata>
+        <id>ReadyEDI.EntityFactory.Data</id>
+        <version>1.0.3</version>
+        <title>Baboon</title>
+        <!-- Authors contain text that appears directly on the gallery -->
+        <authors>Chuck Forest</authors>
+        <owners>chuck.forest</owners>
+        <licenseUrl>http://opensource.org/licenses/MIT</licenseUrl>
+        <projectUrl>http://github.com/chuckforest/Baboon</projectUrl>
+        <iconUrl>http://github.com/chuckforest/Babboon/baboon_icon.png</iconUrl>
+        <requireLicenseAcceptance>false</requireLicenseAcceptance>
+        <releaseNotes>Release</releaseNotes>
+        <description>Data Layer for Low Code Development Platforms</description>
+        <copyright>Copyright ©2018 ReadyEDI</copyright>
+        <dependencies />
+        <tags>ORM</tags>
+    </metadata>
+  <files>
+    <file src="[SomeProjectRoot]\bin\release\*.dll" target="lib\net40" />
+    <file src="[SomeProjectRoot]\**\*.cs" target="content\source code" exclude="AssemblyInfo.cs;IrrelevantSource.cs" />
+  </files>
+</package>
