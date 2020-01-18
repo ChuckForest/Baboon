@@ -8,14 +8,14 @@ namespace ReadyEDI.EntityFactory
     public class CriteriaParameter
     {
         private string _columnName = String.Empty;
-        private string _constraint = String.Empty;
+        private object _constraint = null;
 
         public CriteriaParameter()
         {
 
         }
 
-        public CriteriaParameter(string columnName, string constraint)
+        public CriteriaParameter(string columnName, object constraint)
         {
             _columnName = columnName;
             _constraint = constraint;
@@ -27,7 +27,7 @@ namespace ReadyEDI.EntityFactory
             set { _columnName = value; }
         }
 
-        public string Constraint
+        public object Constraint
         {
             get { return _constraint; }
             set { _constraint = value; }

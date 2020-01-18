@@ -457,6 +457,11 @@ namespace ReadyEDI.EntityFactory
             _memento = GetData();
         }
 
+        public virtual void Save()
+        {
+            _memento = GetData();
+        } 
+
         public void RevertConflicts()
         {
             _crudConflict.Fields.ForEach(f => RevertField(f));
